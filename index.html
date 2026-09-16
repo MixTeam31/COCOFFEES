@@ -3,27 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lecture vidéo</title>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Lecteur vidéo</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main id="player-container">
-    <video
-      id="video-player"
-      autoplay
-      muted
-      playsinline
-      preload="auto"
-    ></video>
 
-    <div id="message">
-      Chargement des vidéos...
-    </div>
+  <video
+    id="videoPlayer"
+    autoplay
+    muted
+    playsinline
+    preload="auto"
+  ></video>
 
-    <button id="start-button">
-      Démarrer le plein écran
-    </button>
-  </main>
+  <div id="loading">Chargement...</div>
+
+  <button id="fullscreenButton">
+    Démarrer le plein écran
+  </button>
 
   <script src="app.js"></script>
 </body>
