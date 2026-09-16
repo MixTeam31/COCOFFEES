@@ -1,188 +1,194 @@
-const video = document.getElementById("video-player");
-const message = document.getElementById("message");
-const startButton = document.getElementById("start-button");
-
-let videos = [];
-let currentIndex = 0;
-let wakeLock = null;
-let wakeLockInterval = null;
+const videoPlayer = document.getElementById("videoPlayer");
+const fullscreenButton = document.getElementById("fullscreenButton");
+const loading = document.getElementById("loading");
 
 const videoFolder = "VIDEO/";
+const maximumNumberOfVideos = 999;
 
-function naturalSort(a, b) {
-  return a.localeCompare(b, undefined, {
-    numeric: true,
-    sensitivity: "base"
-  });
-}
+let videoFiles = [];
+let currentVideoIndex = 0;
+let wakeLock = null;
 
-async function loadVideoList() {
-  /*
-   * Un navigateur ne peut pas lister automatiquement les fichiers
-   * présents dans un dossier GitHub/Vercel.
-   *
-   * Cette liste est donc générée automatiquement entre 1.mp4 et 999.mp4.
-   */
+async function findVideos() {
   const foundVideos = [];
 
-  for (let number = 1; number <= 999; number++) {
-    const fileName = `${number}.mp4`;
-    const url = `${videoFolder}${fileName}`;
+  for (
+    let videoNumber = 1;
+    videoNumber <= maximumNumberOfVideos;
+    videoNumber++
+  ) {
+    const fileName = `${videoNumber}.mp4`;
+    const videoUrl = `${videoFolder}${fileName}`;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(videoUrl, {
         method: "HEAD",
         cache: "no-store"
       });
 
       if (response.ok) {
-        foundVideos.push({
-          number,
-          fileName,
-          url
-        });
+        foundVideos.push(videoUrl);
       }
     } catch (error) {
-      console.warn(`Impossible de vérifier ${fileName}`, error);
+      console.warn(`Erreur lors de la recherche de ${fileName}`, error);
     }
   }
 
-  videos = foundVideos.sort((a, b) => a.number - b.number);
+  return foundVideos;
 }
 
-function showMessage(text) {
-  message.textContent = text;
-  message.style.display = "block";
+function showLoading(message) {
+  loading.textContent = message;
+  loading.style.display = "block";
 }
 
-function hideMessage() {
-  message.style.display = "none";
+function hideLoading() {
+  loading.style.display = "none";
 }
 
-async function requestWakeLock() {
+async function activateFullscreen() {
+  try {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen();
+    }
+
+    fullscreenButton.style.display = "none";
+  } catch (error) {
+    console.warn("Le plein écran automatique a été bloqué.", error);
+    fullscreenButton.style.display = "block";
+  }
+}
+
+async function activateWakeLock() {
   if (!("wakeLock" in navigator)) {
-    console.warn("Wake Lock non disponible sur ce navigateur.");
+    console.warn("La fonction Wake Lock n'est pas disponible.");
     return;
   }
 
   try {
-    wakeLock = await navigator.wakeLock.request("screen");
+    if (wakeLock === null) {
+      wakeLock = await navigator.wakeLock.request("screen");
 
-    wakeLock.addEventListener("release", () => {
-      console.log("Wake Lock libéré.");
-    });
+      wakeLock.addEventListener("release", () => {
+        wakeLock = null;
+        console.warn("Wake Lock désactivé.");
+      });
 
-    console.log("Wake Lock activé.");
+      console.log("Wake Lock activé.");
+    }
   } catch (error) {
-    console.warn("Impossible d'activer le Wake Lock :", error);
+    console.warn("Impossible d'empêcher la mise en veille.", error);
   }
 }
 
 async function restoreWakeLock() {
   if (document.visibilityState === "visible") {
-    await requestWakeLock();
+    await activateWakeLock();
   }
 }
 
-async function enterFullscreen() {
-  const container = document.documentElement;
-
-  try {
-    if (!document.fullscreenElement && container.requestFullscreen) {
-      await container.requestFullscreen();
-    }
-  } catch (error) {
-    console.warn("Plein écran non disponible :", error);
-  }
-}
-
-async function startPlayback() {
-  await enterFullscreen();
-  await requestWakeLock();
-
-  startButton.style.display = "none";
-
-  try {
-    await video.play();
-  } catch (error) {
-    console.warn("Lecture automatique bloquée :", error);
-    startButton.style.display = "block";
-    showMessage("Cliquez sur le bouton pour démarrer la lecture.");
-  }
-}
-
-function playCurrentVideo() {
-  if (videos.length === 0) {
-    showMessage("Aucune vidéo trouvée dans le dossier VIDEO.");
+async function playVideo(index) {
+  if (videoFiles.length === 0) {
+    showLoading("Aucune vidéo trouvée dans le dossier VIDEO.");
     return;
   }
 
-  const currentVideo = videos[currentIndex];
+  currentVideoIndex = index;
 
-  video.src = currentVideo.url;
-  video.load();
+  videoPlayer.src = videoFiles[currentVideoIndex];
+  videoPlayer.load();
 
-  video.play().catch((error) => {
-    console.warn("Lecture bloquée :", error);
-    startButton.style.display = "block";
-    showMessage("Cliquez sur le bouton pour démarrer la lecture.");
-  });
-
-  hideMessage();
+  try {
+    await videoPlayer.play();
+    hideLoading();
+  } catch (error) {
+    console.warn("La lecture automatique a été bloquée.", error);
+    showLoading("Cliquez sur le bouton pour démarrer la lecture.");
+    fullscreenButton.style.display = "block";
+  }
 }
 
-video.addEventListener("ended", () => {
-  currentIndex++;
+async function startPlayer() {
+  fullscreenButton.style.display = "none";
+  hideLoading();
 
-  if (currentIndex >= videos.length) {
-    currentIndex = 0;
+  await activateFullscreen();
+  await activateWakeLock();
+
+  try {
+    await videoPlayer.play();
+  } catch (error) {
+    console.warn("Impossible de démarrer la vidéo.", error);
+    fullscreenButton.style.display = "block";
+  }
+}
+
+videoPlayer.addEventListener("ended", async () => {
+  let nextIndex = currentVideoIndex + 1;
+
+  if (nextIndex >= videoFiles.length) {
+    nextIndex = 0;
   }
 
-  playCurrentVideo();
+  await playVideo(nextIndex);
 });
 
-video.addEventListener("error", () => {
-  console.warn("Erreur de lecture vidéo.");
+videoPlayer.addEventListener("error", async () => {
+  console.warn("Erreur avec la vidéo actuelle.");
 
-  currentIndex++;
+  let nextIndex = currentVideoIndex + 1;
 
-  if (currentIndex >= videos.length) {
-    currentIndex = 0;
+  if (nextIndex >= videoFiles.length) {
+    nextIndex = 0;
   }
 
-  setTimeout(playCurrentVideo, 1000);
+  setTimeout(() => {
+    playVideo(nextIndex);
+  }, 1000);
 });
+
+fullscreenButton.addEventListener("click", startPlayer);
 
 document.addEventListener("visibilitychange", async () => {
   await restoreWakeLock();
 
-  if (document.visibilityState === "visible" && video.paused) {
-    video.play().catch(() => {});
+  if (document.visibilityState === "visible") {
+    try {
+      await videoPlayer.play();
+    } catch (error) {
+      console.warn("La reprise automatique a été bloquée.");
+    }
   }
 });
 
-startButton.addEventListener("click", startPlayback);
-
-async function initialize() {
-  showMessage("Recherche des vidéos...");
-
-  await loadVideoList();
-
-  if (videos.length > 0) {
-    currentIndex = 0;
-    playCurrentVideo();
-  } else {
-    showMessage(
-      "Aucune vidéo détectée. Vérifiez que les fichiers sont dans VIDEO et nommés 1.mp4, 2.mp4, etc."
-    );
+document.addEventListener("fullscreenchange", () => {
+  if (document.fullscreenElement) {
+    fullscreenButton.style.display = "none";
   }
+});
+
+async function initializePlayer() {
+  showLoading("Recherche des vidéos...");
+
+  videoFiles = await findVideos();
+
+  if (videoFiles.length === 0) {
+    showLoading(
+      "Aucune vidéo trouvée. Vérifiez les fichiers 1.mp4, 2.mp4, etc."
+    );
+    return;
+  }
+
+  console.log("Vidéos détectées :", videoFiles);
+
+  await playVideo(0);
+
+  // Demande automatique du plein écran.
+  // Certains navigateurs exigeront un clic utilisateur.
+  await activateFullscreen();
+
+  // Activation de la protection contre la mise en veille.
+  await activateWakeLock();
 }
 
-initialize();
-
-// Nouvelle tentative périodique d'activation du Wake Lock
-wakeLockInterval = setInterval(() => {
-  if (!wakeLock && document.visibilityState === "visible") {
-    requestWakeLock();
-  }
-}, 30000);
+initializePlayer();
