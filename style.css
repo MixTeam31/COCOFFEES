@@ -1,19 +1,112 @@
-#playButton {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 20;
-  transform: translate(-50%, -50%);
-  padding: 16px 26px;
-  border: none;
-  border-radius: 8px;
-  background: #0078d4;
-  color: #fff;
-  font-family: Arial, sans-serif;
-  font-size: 18px;
-  cursor: pointer;
+:root {
+  color-scheme: dark;
 }
 
-#playButton:hover {
-  background: #005ea8;
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+#videoPlayer {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  object-fit: contain;
+  outline: none;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0);
+  transition: background 250ms ease;
+}
+
+#overlay.visible {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+#statusMessage {
+  display: none;
+  max-width: min(90vw, 700px);
+  padding: 16px 22px;
+  border-radius: 10px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.78);
+  font-size: clamp(18px, 2.2vw, 30px);
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  letter-spacing: 0.2px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
+#startButton {
+  display: none;
+  pointer-events: auto;
+  min-width: 240px;
+  padding: 16px 26px;
+  border: 0;
+  border-radius: 10px;
+  background: #b47a42;
+  color: #fff;
+  font-size: clamp(17px, 2vw, 24px);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+#startButton:hover,
+#startButton:focus-visible {
+  background: #8f5d2f;
+  outline: 3px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 3px;
+}
+
+#startButton:active {
+  transform: scale(0.97);
+}
+
+/* Lorsque le navigateur entre réellement en plein écran */
+:fullscreen #videoPlayer {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Compatibilité Safari */
+:-webkit-full-screen #videoPlayer {
+  width: 100vw;
+  height: 100vh;
 }
