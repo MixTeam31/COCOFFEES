@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
+  <meta name="theme-color" content="#1b1009">
+
+  <title>COCOFFEES · Administration</title>
+
+  <link rel="stylesheet" href="./admin.css">
+</head>
+
+<body>
+  <main class="admin-app">
+    <section id="loginPanel" class="login-panel">
+      <div class="login-card">
+        <div class="brand-icon">C</div>
+
+        <h1>COCOFFEES</h1>
+        <p>Administration des afficheurs</p>
+
+        <form id="loginForm">
+          <label for="loginId">Identifiant</label>
+          <input
+            id="loginId"
+            name="id"
+            type="text"
+            autocomplete="username"
+            required
+          >
+
+          <label for="loginPassword">Mot de passe</label>
+          <input
+            id="loginPassword"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          >
+
+          <p id="loginError" class="form-error"></p>
+
+          <button type="submit">
+            Se connecter
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section id="dashboard" class="dashboard hidden">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">COCOFFEES</p>
+          <h1>Afficheurs</h1>
+        </div>
+
+        <div class="topbar-actions">
+          <span id="refreshInfo">Mise à jour...</span>
+
+          <button id="refreshButton" class="secondary-button">
+            Actualiser
+          </button>
+
+          <button id="logoutButton" class="secondary-button">
+            Déconnexion
+          </button>
+        </div>
+      </header>
+
+      <section class="broadcast-panel">
+        <div>
+          <p class="eyebrow">DIFFUSION GLOBALE</p>
+          <h2>Envoyer un message à tous les afficheurs</h2>
+        </div>
+
+        <form id="broadcastForm" class="notification-form">
+          <input
+            id="broadcastMessage"
+            type="text"
+            maxlength="350"
+            placeholder="Ex. Le service commence dans 10 minutes."
+            required
+          >
+
+          <input
+            id="broadcastDuration"
+            type="number"
+            min="1"
+            max="24"
+            value="10"
+            required
+          >
+
+          <select id="broadcastUnit">
+            <option value="seconds">secondes</option>
+            <option value="minutes">minutes</option>
+            <option value="hours">heures</option>
+          </select>
+
+          <button type="submit">
+            Envoyer à tous
+          </button>
+        </form>
+      </section>
+
+      <p id="dashboardMessage" class="dashboard-message"></p>
+
+      <section id="devicesGrid" class="devices-grid"></section>
+    </section>
+  </main>
+
+  <script src="./admin.js"></script>
+</body>
+</html>

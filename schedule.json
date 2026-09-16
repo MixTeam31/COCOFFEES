@@ -1,0 +1,28 @@
+{
+  "timezone": "Europe/Paris",
+  "closingWarningMinutes": 15,
+  "openingHours": {
+    "monday": {
+      "open": "07:30",
+      "close": "16:00"
+    },
+    "tuesday": {
+      "open": "07:30",
+      "close": "16:00"
+    },
+    "wednesday": {
+      "open": "07:30",
+      "close": "12:00"
+    },
+    "thursday": {
+      "open": "07:30",
+      "close": "16:00"
+    },
+    "friday": {
+      "open": "07:30",
+      "close": "16:00"
+    },
+    "saturday": null,
+    "sunday": null
+  }
+}

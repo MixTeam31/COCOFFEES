@@ -1,4 +1,4 @@
-import db from "../_db.js";
+import { getDatabase } from "../_db.js";
 
 export default async function handler(request, response) {
   if (request.method !== "GET") {
@@ -16,40 +16,29 @@ export default async function handler(request, response) {
       });
     }
 
-    const database = db();
+    const database = getDatabase();
 
     const result = await database.execute({
       sql: `
         SELECT id, type, payload, created_at
         FROM commands
-        WHERE device_id = ?
-          AND consumed_at IS NULL
+        WHERE consumed_at IS NULL
+          AND (device_id = ? OR device_id = '*')
         ORDER BY created_at ASC
-        LIMIT 20
+        LIMIT 30
       `,
       args: [deviceId]
     });
 
-    if (result.rows.length > 0) {
-      const ids = result.rows.map((row) => row.id);
-
-      await database.execute({
-        sql: `
-          UPDATE commands
-          SET consumed_at = ?
-          WHERE id IN (${ids.map(() => "?").join(",")})
-        `,
-        args: [Math.floor(Date.now() / 1000), ...ids]
-      });
-    }
+    const commands = result.rows.map((command) => ({
+      id: Number(command.id),
+      type: command.type,
+      payload: command.payload ? JSON.parse(command.payload) : {},
+      createdAt: Number(command.created_at)
+    }));
 
     return response.status(200).json({
-      commands: result.rows.map((row) => ({
-        id: row.id,
-        type: row.type,
-        payload: row.payload ? JSON.parse(row.payload) : null,
-        createdAt: row.created_at
-      }))
+      commands
     });
   } catch (error) {
     console.error(error);

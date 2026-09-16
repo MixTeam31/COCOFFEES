@@ -1,4 +1,4 @@
-import db from "../_db.js";
+import { getDatabase } from "../_db.js";
 
 export default async function handler(request, response) {
   if (request.method !== "POST") {
@@ -8,17 +8,9 @@ export default async function handler(request, response) {
   }
 
   try {
-    const database = db();
     const body = request.body || {};
 
     const deviceId = String(body.deviceId || "").trim();
-    const deviceName = String(body.deviceName || "Afficheur").trim();
-    const userAgent = String(body.userAgent || "").slice(0, 1000);
-    const currentVideo = String(body.currentVideo || "").slice(0, 500);
-    const currentIndex = Number.isInteger(body.currentIndex)
-      ? body.currentIndex
-      : 0;
-    const state = String(body.state || "unknown").slice(0, 50);
 
     if (!deviceId) {
       return response.status(400).json({
@@ -26,6 +18,7 @@ export default async function handler(request, response) {
       });
     }
 
+    const database = getDatabase();
     const now = Math.floor(Date.now() / 1000);
 
     await database.execute({
@@ -38,32 +31,34 @@ export default async function handler(request, response) {
           current_index,
           state,
           last_seen,
-          created_at
+          created_at,
+          updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           user_agent = excluded.user_agent,
           current_video = excluded.current_video,
           current_index = excluded.current_index,
           state = excluded.state,
-          last_seen = excluded.last_seen
+          last_seen = excluded.last_seen,
+          updated_at = excluded.updated_at
       `,
       args: [
         deviceId,
-        deviceName,
-        userAgent,
-        currentVideo,
-        currentIndex,
-        state,
+        String(body.deviceName || "Afficheur").slice(0, 120),
+        String(body.userAgent || "").slice(0, 1000),
+        String(body.currentVideo || "").slice(0, 500),
+        Number(body.currentIndex || 0),
+        String(body.state || "unknown").slice(0, 50),
+        now,
         now,
         now
       ]
     });
 
     return response.status(200).json({
-      success: true,
-      serverTime: now
+      success: true
     });
   } catch (error) {
     console.error(error);

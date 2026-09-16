@@ -1,24 +1,25 @@
 import { createClient } from "@libsql/client";
 
-let client;
+let databaseClient = null;
 
-function getDatabase() {
-  if (!client) {
-    if (!process.env.TURSO_DATABASE_URL) {
-      throw new Error("TURSO_DATABASE_URL est manquante.");
-    }
-
-    if (!process.env.TURSO_AUTH_TOKEN) {
-      throw new Error("TURSO_AUTH_TOKEN est manquant.");
-    }
-
-    client = createClient({
-      url: process.env.TURSO_DATABASE_URL,
-      authToken: process.env.TURSO_AUTH_TOKEN
-    });
+export function getDatabase() {
+  if (databaseClient) {
+    return databaseClient;
   }
 
-  return client;
-}
+  const url = process.env.TURSO_DATABASE_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN;
 
-export default getDatabase;
+  if (!url || !authToken) {
+    throw new Error(
+      "TURSO_DATABASE_URL ou TURSO_AUTH_TOKEN est manquant."
+    );
+  }
+
+  databaseClient = createClient({
+    url,
+    authToken
+  });
+
+  return databaseClient;
+}

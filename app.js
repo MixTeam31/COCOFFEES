@@ -5,27 +5,84 @@ const overlay = document.getElementById("overlay");
 const statusMessage = document.getElementById("statusMessage");
 const startButton = document.getElementById("startButton");
 
+const startupScreen = document.getElementById("startupScreen");
+const startupText = document.getElementById("startupText");
+const startupProgressBar = document.getElementById("startupProgressBar");
+
+const closingNotice = document.getElementById("closingNotice");
+const closingNoticeText = document.getElementById("closingNoticeText");
+
+const remoteNotification = document.getElementById("remoteNotification");
+const remoteNotificationText = document.getElementById("remoteNotificationText");
+
 const VIDEO_MANIFEST_URL = "./videos.json";
+const SCHEDULE_URL = "./schedule.json";
+
+const HEARTBEAT_INTERVAL_MS = 10000;
+const COMMAND_POLL_INTERVAL_MS = 3000;
+const SCHEDULE_CHECK_INTERVAL_MS = 10000;
+
 const LOADING_TEXT = "COCOFFEES - Chargement...";
 
 let videos = [];
+let schedule = null;
 let currentVideoIndex = 0;
 let wakeLock = null;
+
 let isChangingVideo = false;
 let manualStartRequired = false;
+let manualPaused = false;
+let displayIsOpen = true;
+let notificationTimeout = null;
+let commandPollInProgress = false;
 
-/**
- * Affiche le message central.
- */
+const deviceId = getOrCreateDeviceId();
+const deviceName = getDeviceName();
+
+/* -------------------------------------------------------------------------- */
+/* Identité de l'afficheur                                                    */
+/* -------------------------------------------------------------------------- */
+
+function getOrCreateDeviceId() {
+  const storageKey = "cocoffees_device_id";
+  let id = localStorage.getItem(storageKey);
+
+  if (!id) {
+    id = `display-${crypto.randomUUID()}`;
+    localStorage.setItem(storageKey, id);
+  }
+
+  return id;
+}
+
+function getDeviceName() {
+  const queryName = new URLSearchParams(window.location.search).get("name");
+
+  if (queryName && queryName.trim()) {
+    localStorage.setItem("cocoffees_device_name", queryName.trim());
+  }
+
+  let name = localStorage.getItem("cocoffees_device_name");
+
+  if (!name) {
+    const shortId = deviceId.slice(-6).toUpperCase();
+    name = `Afficheur ${shortId}`;
+    localStorage.setItem("cocoffees_device_name", name);
+  }
+
+  return name;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Interface                                                                  */
+/* -------------------------------------------------------------------------- */
+
 function showStatus(message = LOADING_TEXT) {
   statusMessage.textContent = message;
   statusMessage.style.display = "block";
   overlay.classList.add("visible");
 }
 
-/**
- * Cache le message central.
- */
 function hideStatus() {
   statusMessage.style.display = "none";
 
@@ -34,17 +91,11 @@ function hideStatus() {
   }
 }
 
-/**
- * Affiche le bouton uniquement si le navigateur bloque l'autoplay.
- */
 function showStartButton() {
   startButton.style.display = "block";
   overlay.classList.add("visible");
 }
 
-/**
- * Cache le bouton de démarrage.
- */
 function hideStartButton() {
   startButton.style.display = "none";
 
@@ -53,24 +104,56 @@ function hideStartButton() {
   }
 }
 
-/**
- * Charge la liste des vidéos définie dans videos.json.
- */
+function setStartupStep(text, progress) {
+  startupText.textContent = text;
+  startupProgressBar.style.width = `${progress}%`;
+}
+
+function hideStartup() {
+  startupScreen.classList.add("hidden");
+}
+
+function showClosingNotice(message) {
+  closingNoticeText.textContent = message;
+  closingNotice.classList.add("visible");
+}
+
+function hideClosingNotice() {
+  closingNotice.classList.remove("visible");
+}
+
+function showRemoteNotification(message, durationSeconds) {
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+  }
+
+  remoteNotificationText.textContent = message;
+  remoteNotification.classList.add("visible");
+
+  const safeDuration = Math.max(1, Number(durationSeconds) || 10);
+
+  notificationTimeout = setTimeout(() => {
+    remoteNotification.classList.remove("visible");
+  }, safeDuration * 1000);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Vidéos                                                                     */
+/* -------------------------------------------------------------------------- */
+
 async function loadVideoManifest() {
   const response = await fetch(VIDEO_MANIFEST_URL, {
     cache: "no-store"
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Impossible de charger videos.json (HTTP ${response.status}).`
-    );
+    throw new Error(`Impossible de charger videos.json : ${response.status}`);
   }
 
   const manifest = await response.json();
 
   if (!Array.isArray(manifest) || manifest.length === 0) {
-    throw new Error("videos.json est vide ou son format est invalide.");
+    throw new Error("videos.json est vide ou incorrect.");
   }
 
   const validVideos = manifest.filter((videoPath) => {
@@ -78,23 +161,18 @@ async function loadVideoManifest() {
   });
 
   if (validVideos.length === 0) {
-    throw new Error("Aucun chemin vidéo valide dans videos.json.");
+    throw new Error("Aucune vidéo valide n'est configurée.");
   }
 
   return validVideos;
 }
 
-/**
- * Attend qu'une vidéo soit suffisamment prête pour démarrer.
- */
 function waitForVideoReady() {
   return new Promise((resolve, reject) => {
-    const timeoutDuration = 15000;
-
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error("Le chargement de la vidéo a expiré."));
-    }, timeoutDuration);
+      reject(new Error("Expiration du chargement vidéo."));
+    }, 20000);
 
     function cleanup() {
       clearTimeout(timeout);
@@ -109,7 +187,7 @@ function waitForVideoReady() {
 
     function onError() {
       cleanup();
-      reject(new Error("La vidéo ne peut pas être lue."));
+      reject(new Error("Vidéo non lisible."));
     }
 
     videoPlayer.addEventListener("canplay", onCanPlay, { once: true });
@@ -117,16 +195,17 @@ function waitForVideoReady() {
   });
 }
 
-/**
- * Charge et lance la vidéo correspondant à l'index reçu.
- */
 async function playVideo(index, initiatedByUser = false) {
-  if (videos.length === 0 || isChangingVideo) {
+  if (
+    videos.length === 0 ||
+    isChangingVideo ||
+    !displayIsOpen
+  ) {
     return false;
   }
 
   isChangingVideo = true;
-  currentVideoIndex = index;
+  currentVideoIndex = Math.max(0, Math.min(index, videos.length - 1));
 
   showStatus(LOADING_TEXT);
 
@@ -139,27 +218,26 @@ async function playVideo(index, initiatedByUser = false) {
     await videoPlayer.play();
 
     manualStartRequired = false;
+    manualPaused = false;
 
     hideStatus();
     hideStartButton();
 
     await requestWakeLock();
+    sendHeartbeat();
 
     return true;
   } catch (error) {
-    console.warn(
-      `Impossible de lire la vidéo : ${videos[currentVideoIndex]}`,
-      error
-    );
+    console.warn("Erreur de lecture vidéo :", error);
 
     if (initiatedByUser) {
       showStatus("COCOFFEES - Impossible de lancer cette vidéo.");
-      showStartButton();
     } else {
       manualStartRequired = true;
       showStatus("COCOFFEES - Lecture automatique bloquée.");
-      showStartButton();
     }
+
+    showStartButton();
 
     return false;
   } finally {
@@ -167,70 +245,21 @@ async function playVideo(index, initiatedByUser = false) {
   }
 }
 
-/**
- * Passe à la vidéo suivante.
- * Après la dernière vidéo, retour automatique à la première.
- */
 async function playNextVideo() {
-  if (videos.length === 0) {
+  if (videos.length === 0 || !displayIsOpen || manualPaused) {
     return;
   }
 
   const nextIndex = (currentVideoIndex + 1) % videos.length;
-  const started = await playVideo(nextIndex, false);
-
-  /*
-   * Si une vidéo est défectueuse mais que l'autoplay n'est pas le problème,
-   * on tente automatiquement la suivante.
-   */
-  if (!started && !manualStartRequired && videos.length > 1) {
-    await playNextVideo();
-  }
+  await playVideo(nextIndex);
 }
 
-/**
- * Demande le plein écran.
- * Sans geste utilisateur, certains navigateurs le refusent volontairement.
- */
-async function requestFullscreen() {
-  if (document.fullscreenElement) {
-    return true;
-  }
+/* -------------------------------------------------------------------------- */
+/* Wake Lock et plein écran                                                   */
+/* -------------------------------------------------------------------------- */
 
-  const element = document.documentElement;
-
-  try {
-    if (element.requestFullscreen) {
-      await element.requestFullscreen({
-        navigationUI: "hide"
-      });
-
-      return true;
-    }
-
-    if (element.webkitRequestFullscreen) {
-      element.webkitRequestFullscreen();
-
-      return true;
-    }
-  } catch (error) {
-    console.info("Plein écran automatique non autorisé par le navigateur.");
-  }
-
-  return false;
-}
-
-/**
- * Active le Wake Lock lorsque le navigateur le supporte.
- * Cela limite la mise en veille de l'écran, sans pouvoir remplacer
- * les réglages système de la TV, tablette ou du PC.
- */
 async function requestWakeLock() {
-  if (!("wakeLock" in navigator)) {
-    return;
-  }
-
-  if (wakeLock !== null) {
+  if (!("wakeLock" in navigator) || wakeLock !== null) {
     return;
   }
 
@@ -241,104 +270,439 @@ async function requestWakeLock() {
       wakeLock = null;
     });
   } catch (error) {
-    console.info("Wake Lock non disponible ou refusé sur cet appareil.");
+    console.info("Wake Lock non disponible.");
   }
 }
 
-/**
- * Démarrage depuis le bouton :
- * l'action utilisateur débloque normalement la lecture et le plein écran.
- */
-async function startFromUserAction() {
-  hideStartButton();
-  showStatus(LOADING_TEXT);
+async function requestFullscreen() {
+  if (document.fullscreenElement) {
+    return true;
+  }
 
-  await requestFullscreen();
+  try {
+    await document.documentElement.requestFullscreen({
+      navigationUI: "hide"
+    });
 
-  const started = await playVideo(currentVideoIndex, true);
-
-  if (started) {
-    await requestWakeLock();
+    return true;
+  } catch (error) {
+    return false;
   }
 }
 
-/**
- * Si la vidéo se termine : lecture de la suivante.
- */
-videoPlayer.addEventListener("ended", async () => {
-  await playNextVideo();
-});
+/* -------------------------------------------------------------------------- */
+/* Horaires                                                                   */
+/* -------------------------------------------------------------------------- */
 
-/**
- * Gestion d'une erreur qui intervient pendant la lecture.
- */
-videoPlayer.addEventListener("error", async () => {
-  if (isChangingVideo || videos.length === 0) {
+async function loadSchedule() {
+  const response = await fetch(SCHEDULE_URL, {
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error("Impossible de charger schedule.json.");
+  }
+
+  return response.json();
+}
+
+function getParisTimeParts() {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: schedule?.timezone || "Europe/Paris",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  });
+
+  const parts = formatter.formatToParts(new Date());
+
+  const value = (type) => {
+    return parts.find((part) => part.type === type)?.value;
+  };
+
+  return {
+    weekday: value("weekday").toLowerCase(),
+    hour: Number(value("hour")),
+    minute: Number(value("minute"))
+  };
+}
+
+function timeToMinutes(time) {
+  const [hour, minute] = time.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function formatDuration(totalMinutes) {
+  const safeMinutes = Math.max(0, Math.floor(totalMinutes));
+  const days = Math.floor(safeMinutes / 1440);
+  const hours = Math.floor((safeMinutes % 1440) / 60);
+  const minutes = safeMinutes % 60;
+
+  if (days > 0) {
+    return `${days} j ${hours} h ${minutes} min`;
+  }
+
+  if (hours > 0) {
+    return `${hours} h ${minutes.toString().padStart(2, "0")} min`;
+  }
+
+  return `${minutes} min`;
+}
+
+function getNextOpening(currentDay, currentMinutes) {
+  const orderedDays = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday"
+  ];
+
+  const currentDayIndex = orderedDays.indexOf(currentDay);
+
+  for (let offset = 0; offset < 8; offset += 1) {
+    const dayIndex = (currentDayIndex + offset) % 7;
+    const dayName = orderedDays[dayIndex];
+    const daySchedule = schedule.openingHours[dayName];
+
+    if (!daySchedule) {
+      continue;
+    }
+
+    const openMinutes = timeToMinutes(daySchedule.open);
+
+    if (offset === 0 && currentMinutes >= openMinutes) {
+      continue;
+    }
+
+    const minutesUntil = (offset * 1440) + openMinutes - currentMinutes;
+
+    return {
+      dayName,
+      open: daySchedule.open,
+      minutesUntil
+    };
+  }
+
+  return null;
+}
+
+async function applySchedule() {
+  if (!schedule) {
     return;
   }
 
-  console.warn("Erreur de lecture détectée. Passage à la vidéo suivante.");
+  const now = getParisTimeParts();
+  const currentMinutes = now.hour * 60 + now.minute;
+  const todaySchedule = schedule.openingHours[now.weekday];
 
-  if (videos.length > 1) {
-    await playNextVideo();
+  if (!todaySchedule) {
+    displayIsOpen = false;
+    videoPlayer.pause();
+
+    const nextOpening = getNextOpening(now.weekday, currentMinutes);
+
+    showStatus(
+      nextOpening
+        ? `COCOFFEES\nConnecté\nEn attente de l'horaire\nLancement dans ${formatDuration(nextOpening.minutesUntil)}`
+        : "COCOFFEES\nConnecté\nEn attente de l'horaire"
+    );
+
+    hideClosingNotice();
+    sendHeartbeat();
+    return;
+  }
+
+  const openMinutes = timeToMinutes(todaySchedule.open);
+  const closeMinutes = timeToMinutes(todaySchedule.close);
+
+  if (currentMinutes < openMinutes) {
+    displayIsOpen = false;
+    videoPlayer.pause();
+
+    showStatus(
+      `COCOFFEES\nConnecté\nEn attente de l'ouverture\nLancement dans ${formatDuration(openMinutes - currentMinutes)}`
+    );
+
+    hideClosingNotice();
+    sendHeartbeat();
+    return;
+  }
+
+  if (currentMinutes >= closeMinutes) {
+    displayIsOpen = false;
+    videoPlayer.pause();
+
+    const nextOpening = getNextOpening(now.weekday, currentMinutes);
+
+    showStatus(
+      nextOpening
+        ? `COCOFFEES\nConnecté\nEn attente de l'horaire\nProchaine ouverture dans ${formatDuration(nextOpening.minutesUntil)}`
+        : "COCOFFEES\nConnecté\nEn attente de l'horaire"
+    );
+
+    hideClosingNotice();
+    sendHeartbeat();
+    return;
+  }
+
+  const wasClosed = !displayIsOpen;
+  displayIsOpen = true;
+
+  const minutesUntilClosing = closeMinutes - currentMinutes;
+  const warningMinutes = Number(schedule.closingWarningMinutes || 15);
+
+  if (minutesUntilClosing <= warningMinutes) {
+    showClosingNotice(
+      `Fermeture à ${todaySchedule.close} · Dans ${formatDuration(minutesUntilClosing)}`
+    );
   } else {
-    showStatus("COCOFFEES - Impossible de lire la vidéo.");
-    showStartButton();
+    hideClosingNotice();
+  }
+
+  if (wasClosed && !manualPaused) {
+    await playVideo(currentVideoIndex);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Turso via API Vercel                                                       */
+/* -------------------------------------------------------------------------- */
+
+function getCurrentState() {
+  if (!displayIsOpen) {
+    return "waiting_schedule";
+  }
+
+  if (videoPlayer.paused || manualPaused) {
+    return "paused";
+  }
+
+  return "playing";
+}
+
+async function sendHeartbeat() {
+  try {
+    await fetch("/api/devices/heartbeat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        deviceId,
+        deviceName,
+        userAgent: navigator.userAgent,
+        currentVideo: videos[currentVideoIndex] || "",
+        currentIndex: currentVideoIndex,
+        state: getCurrentState()
+      })
+    });
+  } catch (error) {
+    console.info("Heartbeat temporairement indisponible.");
+  }
+}
+
+async function acknowledgeCommands(commandIds) {
+  if (!commandIds.length) {
+    return;
+  }
+
+  await fetch("/api/devices/acknowledge", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      deviceId,
+      commandIds
+    })
+  });
+}
+
+async function handleCommand(command) {
+  const payload = command.payload || {};
+
+  switch (command.type) {
+    case "play":
+      manualPaused = false;
+
+      if (displayIsOpen) {
+        await videoPlayer.play();
+      }
+
+      break;
+
+    case "pause":
+      manualPaused = true;
+      videoPlayer.pause();
+      break;
+
+    case "restart":
+      manualPaused = false;
+      videoPlayer.currentTime = 0;
+
+      if (displayIsOpen) {
+        await videoPlayer.play();
+      }
+
+      break;
+
+    case "change_video": {
+      const requestedIndex = Number(payload.index);
+
+      if (
+        Number.isInteger(requestedIndex) &&
+        requestedIndex >= 0 &&
+        requestedIndex < videos.length
+      ) {
+        manualPaused = false;
+        await playVideo(requestedIndex, true);
+      }
+
+      break;
+    }
+
+    case "notification":
+      showRemoteNotification(
+        String(payload.message || "Message COCOFFEES"),
+        Number(payload.durationSeconds || 10)
+      );
+      break;
+
+    default:
+      console.warn("Commande inconnue :", command.type);
+  }
+}
+
+async function pollCommands() {
+  if (commandPollInProgress) {
+    return;
+  }
+
+  commandPollInProgress = true;
+
+  try {
+    const response = await fetch(
+      `/api/devices/commands?deviceId=${encodeURIComponent(deviceId)}`,
+      {
+        cache: "no-store"
+      }
+    );
+
+    if (!response.ok) {
+      return;
+    }
+
+    const data = await response.json();
+    const commandIds = [];
+
+    for (const command of data.commands || []) {
+      await handleCommand(command);
+      commandIds.push(command.id);
+    }
+
+    await acknowledgeCommands(commandIds);
+    await sendHeartbeat();
+  } catch (error) {
+    console.info("Lecture des commandes indisponible.");
+  } finally {
+    commandPollInProgress = false;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Événements                                                                 */
+/* -------------------------------------------------------------------------- */
+
+videoPlayer.addEventListener("ended", playNextVideo);
+
+videoPlayer.addEventListener("error", async () => {
+  if (isChangingVideo || videos.length <= 1) {
+    return;
+  }
+
+  await playNextVideo();
+});
+
+videoPlayer.addEventListener("play", sendHeartbeat);
+videoPlayer.addEventListener("pause", sendHeartbeat);
+
+startButton.addEventListener("click", async () => {
+  hideStartButton();
+
+  await requestFullscreen();
+  await requestWakeLock();
+
+  if (displayIsOpen) {
+    await playVideo(currentVideoIndex, true);
   }
 });
 
-/**
- * Réactive Wake Lock et tente de reprendre la lecture
- * lorsque l'utilisateur revient sur l'onglet ou l'application.
- */
 document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState !== "visible") {
     return;
   }
 
   await requestWakeLock();
+  await applySchedule();
 
-  if (!videoPlayer.src || !videoPlayer.paused || manualStartRequired) {
-    return;
-  }
-
-  try {
-    await videoPlayer.play();
-    hideStatus();
-    hideStartButton();
-  } catch (error) {
-    showStatus("COCOFFEES - Lecture en attente.");
-    showStartButton();
+  if (
+    displayIsOpen &&
+    !manualPaused &&
+    videoPlayer.paused &&
+    !manualStartRequired
+  ) {
+    try {
+      await videoPlayer.play();
+    } catch (error) {
+      showStartButton();
+    }
   }
 });
 
-/**
- * Clic du bouton de secours.
- */
-startButton.addEventListener("click", startFromUserAction);
+/* -------------------------------------------------------------------------- */
+/* Initialisation                                                             */
+/* -------------------------------------------------------------------------- */
 
-/**
- * Initialisation de l'application.
- */
 async function initialize() {
-  showStatus(LOADING_TEXT);
-  hideStartButton();
-
   try {
-    videos = await loadVideoManifest();
-    await playVideo(0, false);
+    setStartupStep("Connexion de l'afficheur...", 20);
 
-    /*
-     * Tentative de plein écran automatique.
-     * Elle peut être refusée sans clic selon l'appareil/navigateur.
-     */
-    await requestFullscreen();
-    await requestWakeLock();
+    schedule = await loadSchedule();
+
+    setStartupStep("Synchronisation des vidéos...", 52);
+
+    videos = await loadVideoManifest();
+
+    setStartupStep("Vérification des horaires...", 75);
+
+    await applySchedule();
+
+    setStartupStep("COCOFFEES est prêt", 100);
+
+    await sendHeartbeat();
+
+    if (displayIsOpen) {
+      await playVideo(0);
+      await requestFullscreen();
+      await requestWakeLock();
+    }
+
+    setTimeout(hideStartup, 850);
   } catch (error) {
     console.error(error);
-    showStatus("COCOFFEES - Impossible de charger les vidéos.");
+
+    setStartupStep("Erreur de connexion", 100);
+    showStatus("COCOFFEES - Impossible de charger la configuration.");
     showStartButton();
   }
+
+  setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+  setInterval(pollCommands, COMMAND_POLL_INTERVAL_MS);
+  setInterval(applySchedule, SCHEDULE_CHECK_INTERVAL_MS);
 }
 
 initialize();

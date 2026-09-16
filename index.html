@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
+
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover"
@@ -29,13 +30,44 @@
       aria-label="Lecteur vidéo COCOFFEES"
     ></video>
 
-    <div id="overlay" role="status" aria-live="polite">
-      <div id="statusMessage">COCOFFEES - Chargement...</div>
+    <section id="startupScreen" aria-hidden="true">
+      <div class="startup-content">
+        <div class="coffee-mark">C</div>
+
+        <h1>COCOFFEES</h1>
+
+        <p id="startupText">
+          Connexion de l'afficheur...
+        </p>
+
+        <div class="startup-progress">
+          <div id="startupProgressBar"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="overlay" role="status" aria-live="polite">
+      <div id="statusMessage">
+        COCOFFEES - Chargement...
+      </div>
 
       <button id="startButton" type="button">
         ▶ Démarrer la lecture
       </button>
-    </div>
+    </section>
+
+    <aside id="closingNotice" aria-live="polite">
+      <strong>Fermeture COCOFFEES</strong>
+      <span id="closingNoticeText"></span>
+    </aside>
+
+    <section id="remoteNotification" aria-live="assertive">
+      <div class="notification-icon">!</div>
+      <div>
+        <strong>COCOFFEES</strong>
+        <p id="remoteNotificationText"></p>
+      </div>
+    </section>
   </main>
 
   <script src="./app.js"></script>
