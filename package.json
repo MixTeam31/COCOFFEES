@@ -1,5 +1,9 @@
 {
+  "name": "cocoffees-display",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
   "dependencies": {
-    "@libsql/client": "^0.18.0"
+    "@libsql/client": "^0.15.0"
   }
 }
